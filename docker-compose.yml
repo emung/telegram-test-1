@@ -1,0 +1,19 @@
+services:
+  bot:
+    build: .
+    image: telegram-test-1:latest
+    container_name: expense-bot
+    restart: unless-stopped
+    env_file: .env
+    # The expense tracker API runs on the Pi itself, not in Docker.
+    # host-gateway makes host.docker.internal resolve to the host from inside
+    # the container, so API_BASE_URL can stay http://host.docker.internal:3100.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Keeps the SD card from filling up with logs.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 512m
