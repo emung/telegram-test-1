@@ -38,3 +38,9 @@ real Telegram user ID, and a LAN IP for the API. All were removed before the fir
 so none are in git history. Note that the git *index* held the pre-edit file for a while
 after the working tree was cleaned — when scrubbing secrets here, check `git grep --cached`,
 not just the working tree, and re-stage.
+
+## Expense API verbs
+Update is **`PATCH /api/v1/expenses/{id}`**, not PUT — the NestJS controller declares
+`@Patch(':id')` and there is no PUT route, so a PUT returns 404 `Cannot PUT /api/v1/expenses/{id}`.
+`ExpenseWebClient.updateExpenseById` uses `.method("PATCH", ...)` because `HttpRequest.Builder`
+has no `.PATCH()` shortcut. Everything else is POST/GET/DELETE as listed in README.md.

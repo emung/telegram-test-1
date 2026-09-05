@@ -161,7 +161,7 @@ retries the same message as plain text.
 | `POST` | `/expenses` | Adding an expense |
 | `GET` | `/expenses` | `/list` |
 | `GET` | `/expenses/{id}` | `/delete` confirmation prompt |
-| `PUT` | `/expenses/{id}` | `/update` |
+| `PATCH` | `/expenses/{id}` | `/update` |
 | `DELETE` | `/expenses/{id}` | `/delete` confirmation |
 | `GET` | `/expenses/categories` | `/categories` |
 | `GET` | `/expenses/by-category?category=` | `/category` |

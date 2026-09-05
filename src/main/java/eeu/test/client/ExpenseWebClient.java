@@ -45,7 +45,7 @@ public class ExpenseWebClient {
         return objectMapper.readValue(response.body(), ExpenseItem.class);
     }
 
-    // PUT /expenses/{id} - Update Expense
+    // PATCH /expenses/{id} - Update Expense
     public ExpenseItem updateExpenseById(Long id, Expense expense) throws Exception {
         ExpenseItem payload = mapExpenseToItem(expense);
         payload.setId(id);
@@ -55,7 +55,7 @@ public class ExpenseWebClient {
                 .uri(URI.create(baseUrl + "/api/v1/expenses/" + id))
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
-                .PUT(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .method("PATCH", HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
 
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
