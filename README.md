@@ -132,7 +132,7 @@ On success the bot replies with the ID assigned by the API.
 | Command | Description |
 | --- | --- |
 | `/list` | All expenses, with per-currency totals |
-| `/categories` | Distinct categories |
+| `/categories` | Distinct categories, each with a **Show expenses** button |
 | `/search <query>` | Full-text search across expenses |
 | `/category <name>` | Expenses in one category |
 | `/delete <id>` | Delete, guarded by an inline Yes/Cancel keyboard |
@@ -154,6 +154,13 @@ or from the API is HTML-escaped before it is inserted. If Telegram still rejects
 markup, the bot retries the same message as plain text. Replies longer than Telegram's
 4096-character limit are split at blank-line boundaries so no expense block (and no HTML
 tag) is cut in half.
+
+`/categories` attaches an inline keyboard with one **Show expenses** button per category;
+tapping one lists that category's expenses in a new message, so the keyboard stays available
+for the next tap. The category travels in the button's callback data behind a `SHOW_CAT_`
+prefix. Telegram caps callback data at 64 UTF-8 bytes, so a category whose name does not fit
+is still listed but gets no button, with `/category <name>` offered instead; the keyboard is
+also capped at 50 buttons.
 
 Lists are rendered as one two-line block per expense:
 
@@ -201,7 +208,7 @@ reason, so the tests need neither a bot instance nor a Telegram connection.
 | `PATCH` | `/expenses/{id}` | `/update` |
 | `DELETE` | `/expenses/{id}` | `/delete` confirmation |
 | `GET` | `/expenses/categories` | `/categories` |
-| `GET` | `/expenses/by-category?category=` | `/category` |
+| `GET` | `/expenses/by-category?category=` | `/category`, the **Show expenses** buttons |
 | `GET` | `/expenses/by-description?description=` | (client method, not wired to a command) |
 | `GET` | `/expenses/search?q=` | `/search` |
 

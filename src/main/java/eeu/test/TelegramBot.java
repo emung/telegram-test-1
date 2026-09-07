@@ -5,6 +5,7 @@ import eeu.test.client.ExpenseResponse;
 import eeu.test.client.ExpenseSummary;
 import eeu.test.client.ExpenseWebClient;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
+import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
@@ -13,6 +14,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMa
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -21,9 +23,16 @@ public class TelegramBot extends TelegramLongPollingBot {
 
     private static final String DELETE_CONFIRM_PREFIX = "CONFIRM_DELETE_";
     private static final String DELETE_CANCEL_PREFIX = "CANCEL_DELETE_";
+    static final String SHOW_CATEGORY_PREFIX = "SHOW_CAT_";
 
     /** Telegram rejects any sendMessage/editMessageText whose text exceeds this. */
     static final int MAX_MESSAGE_LENGTH = 4096;
+
+    /** Telegram rejects callback data longer than this, measured in UTF-8 bytes. */
+    static final int MAX_CALLBACK_DATA_BYTES = 64;
+
+    /** Keeps the /categories keyboard within what a Telegram client renders comfortably. */
+    static final int MAX_CATEGORY_BUTTONS = 50;
 
     private final Config config;
     private final ExpenseWebClient webClient;
@@ -54,7 +63,7 @@ public class TelegramBot extends TelegramLongPollingBot {
                 return;
             }
 
-            handleDeleteCallback(callbackQuery);
+            handleCallback(callbackQuery);
             return;
         }
 
@@ -146,14 +155,7 @@ public class TelegramBot extends TelegramLongPollingBot {
             rows.add(List.of(confirmBtn, cancelBtn));
             markup.setKeyboard(rows);
 
-            SendMessage sm = SendMessage.builder()
-                    .chatId(userId.toString())
-                    .text(promptText)
-                    .parseMode("HTML")
-                    .replyMarkup(markup)
-                    .build();
-
-            execute(sm);
+            sendWithKeyboard(userId, promptText, markup);
         } catch (NumberFormatException e) {
             sendText(userId, "❌ Invalid ID format.\nUsage: <code>/delete &lt;id&gt;</code> (e.g. <code>/delete 12</code>)");
         } catch (Exception e) {
@@ -161,12 +163,17 @@ public class TelegramBot extends TelegramLongPollingBot {
         }
     }
 
-    private void handleDeleteCallback(CallbackQuery callbackQuery) {
+    private void handleCallback(CallbackQuery callbackQuery) {
         String data = callbackQuery.getData();
         Long chatId = callbackQuery.getMessage().getChatId();
         Integer messageId = callbackQuery.getMessage().getMessageId();
 
-        if (data.startsWith(DELETE_CONFIRM_PREFIX)) {
+        // Until the query is answered the client keeps a loading indicator on the button.
+        answerCallback(callbackQuery.getId());
+
+        if (data.startsWith(SHOW_CATEGORY_PREFIX)) {
+            handleExpensesByCategory(chatId, data.substring(SHOW_CATEGORY_PREFIX.length()));
+        } else if (data.startsWith(DELETE_CONFIRM_PREFIX)) {
             Long id = Long.parseLong(data.substring(DELETE_CONFIRM_PREFIX.length()));
             try {
                 webClient.deleteExpenseById(id);
@@ -177,6 +184,14 @@ public class TelegramBot extends TelegramLongPollingBot {
         } else if (data.startsWith(DELETE_CANCEL_PREFIX)) {
             Long id = Long.parseLong(data.substring(DELETE_CANCEL_PREFIX.length()));
             editMessageText(chatId, messageId, "🚫 Deletion of expense ID " + id + " was cancelled.");
+        }
+    }
+
+    private void answerCallback(String callbackQueryId) {
+        try {
+            execute(AnswerCallbackQuery.builder().callbackQueryId(callbackQueryId).build());
+        } catch (TelegramApiException e) {
+            // Not worth failing the command over: the client just spins a little longer.
         }
     }
 
@@ -222,16 +237,12 @@ public class TelegramBot extends TelegramLongPollingBot {
     private void handleGetCategories(Long userId) {
         try {
             List<String> categories = webClient.getAllDistinctCategories();
-            if (categories.isEmpty()) {
+            if (categories == null || categories.isEmpty()) {
                 sendText(userId, "No categories found.");
                 return;
             }
 
-            StringBuilder sb = new StringBuilder("📁 <b>Categories</b>\n\n");
-            for (String cat : categories) {
-                sb.append("• ").append(escape(cat)).append("\n");
-            }
-            sendText(userId, sb.toString());
+            sendWithKeyboard(userId, formatCategoryList(categories), categoryKeyboard(categories));
         } catch (Exception e) {
             sendText(userId, "❌ Error fetching categories: " + escape(e.getMessage()));
         }
@@ -339,6 +350,64 @@ public class TelegramBot extends TelegramLongPollingBot {
         return sb.toString();
     }
 
+    /**
+     * The categories that can be given a button: blank ones are skipped, callback data must
+     * fit Telegram's 64-byte cap, and the keyboard is capped at {@link #MAX_CATEGORY_BUTTONS}.
+     */
+    static List<String> buttonableCategories(List<String> categories) {
+        return categories.stream()
+                .filter(category -> category != null && !category.isBlank())
+                .filter(TelegramBot::fitsCallbackData)
+                .limit(MAX_CATEGORY_BUTTONS)
+                .toList();
+    }
+
+    static boolean fitsCallbackData(String category) {
+        return (SHOW_CATEGORY_PREFIX + category).getBytes(StandardCharsets.UTF_8).length
+                <= MAX_CALLBACK_DATA_BYTES;
+    }
+
+    /**
+     * The /categories message body. Every category is listed; the ones that could not be
+     * given a button are told how to be queried by command instead.
+     */
+    static String formatCategoryList(List<String> categories) {
+        List<String> withButton = buttonableCategories(categories);
+
+        StringBuilder sb = new StringBuilder("📁 <b>Categories</b>\n\n");
+        for (String category : categories) {
+            if (category == null || category.isBlank()) {
+                continue;
+            }
+            sb.append("• ").append(escape(category));
+            if (!withButton.contains(category)) {
+                sb.append(" — no button, use <code>/category ").append(escape(category)).append("</code>");
+            }
+            sb.append("\n");
+        }
+
+        if (!withButton.isEmpty()) {
+            sb.append("\nTap a <b>Show expenses</b> button below to list a category.");
+        }
+        return sb.toString();
+    }
+
+    /** One "Show expenses" button per category, each on its own row. */
+    static InlineKeyboardMarkup categoryKeyboard(List<String> categories) {
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        for (String category : buttonableCategories(categories)) {
+            rows.add(List.of(InlineKeyboardButton.builder()
+                    // Button labels are plain text, so the category is NOT HTML-escaped here.
+                    .text("Show expenses · " + category)
+                    .callbackData(SHOW_CATEGORY_PREFIX + category)
+                    .build()));
+        }
+
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
+        markup.setKeyboard(rows);
+        return markup;
+    }
+
     static String itemCount(int count) {
         return count + (count == 1 ? " item" : " items");
     }
@@ -404,15 +473,29 @@ public class TelegramBot extends TelegramLongPollingBot {
 
     public void sendText(Long who, String what) {
         for (String chunk : splitForTelegram(what)) {
-            sendChunk(who, chunk);
+            sendChunk(who, chunk, null);
         }
     }
 
-    private void sendChunk(Long who, String what) {
+    /** Sends text, attaching the keyboard to the last chunk so it stays at the bottom. */
+    private void sendWithKeyboard(Long who, String what, InlineKeyboardMarkup markup) {
+        // An inline keyboard with no rows is not valid reply markup, so drop an empty one.
+        InlineKeyboardMarkup effective =
+                markup == null || markup.getKeyboard() == null || markup.getKeyboard().isEmpty() ? null : markup;
+
+        List<String> chunks = splitForTelegram(what);
+        for (int i = 0; i < chunks.size(); i++) {
+            boolean isLast = i == chunks.size() - 1;
+            sendChunk(who, chunks.get(i), isLast ? effective : null);
+        }
+    }
+
+    private void sendChunk(Long who, String what, InlineKeyboardMarkup markup) {
         SendMessage sm = SendMessage.builder()
                 .chatId(who.toString())
                 .text(what)
                 .parseMode("HTML")
+                .replyMarkup(markup)
                 .build();
         try {
             execute(sm);

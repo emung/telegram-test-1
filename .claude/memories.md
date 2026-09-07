@@ -77,3 +77,23 @@ line before the fields are counted.
 
 Suite was mutation-checked: reordering `escape`'s replacements (`<` before `&`) and
 dropping `splitForTelegram`'s blank-line preference both fail the suite.
+
+## /categories carries an inline keyboard
+`/categories` sends one **Show expenses** button per category (label
+`"Show expenses · <category>"`, callback data `SHOW_CAT_<category>`). Tapping sends the
+category listing as a *new* message rather than editing the keyboard message, so the
+buttons stay usable for the next tap.
+
+Constraints baked into `categoryKeyboard`/`buttonableCategories`:
+- Callback data is capped by Telegram at **64 UTF-8 bytes** (`MAX_CALLBACK_DATA_BYTES`),
+  measured in bytes, not chars. A category that does not fit gets **no button** and is
+  listed with a `/category <name>` hint instead — deliberately no truncation, since a
+  truncated name would silently query the wrong category.
+- Keyboard capped at 50 buttons (`MAX_CATEGORY_BUTTONS`); categories past the cap are still
+  listed in the text.
+- Button labels are **plain text, never HTML-escaped** — escaping there would display a
+  literal `&amp;`. Only the message body goes through `escape()`.
+
+`handleDeleteCallback` was renamed `handleCallback` and now dispatches on the data prefix
+(`SHOW_CAT_`, `CONFIRM_DELETE_`, `CANCEL_DELETE_`) and calls `answerCallback` first, without
+which the Telegram client leaves a loading indicator spinning on the tapped button.
