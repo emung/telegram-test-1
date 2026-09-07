@@ -23,7 +23,7 @@ public class TelegramBot extends TelegramLongPollingBot {
     private static final String DELETE_CANCEL_PREFIX = "CANCEL_DELETE_";
 
     /** Telegram rejects any sendMessage/editMessageText whose text exceeds this. */
-    private static final int MAX_MESSAGE_LENGTH = 4096;
+    static final int MAX_MESSAGE_LENGTH = 4096;
 
     private final Config config;
     private final ExpenseWebClient webClient;
@@ -263,7 +263,9 @@ public class TelegramBot extends TelegramLongPollingBot {
         }
     }
 
-    private String formatExpenseResponse(String title, ExpenseResponse response) {
+    // The formatting and parsing helpers below are static and package-private so they can
+    // be unit-tested without a bot instance or a Telegram connection.
+    static String formatExpenseResponse(String title, ExpenseResponse response) {
         List<ExpenseItem> expenses = response.getExpenses();
 
         if (expenses == null || expenses.isEmpty()) {
@@ -300,7 +302,7 @@ public class TelegramBot extends TelegramLongPollingBot {
      * One expense as a two-line block: amount and description on the first line,
      * the metadata (category, recipient, date, id) on the second.
      */
-    private String formatExpenseItem(ExpenseItem item) {
+    static String formatExpenseItem(ExpenseItem item) {
         StringBuilder sb = new StringBuilder();
 
         sb.append("<b>").append(formatAmount(item.getAmount()));
@@ -323,7 +325,9 @@ public class TelegramBot extends TelegramLongPollingBot {
             meta.add("👤 " + escape(item.getRecipient()));
         }
         if (item.getDate() != null && !item.getDate().isBlank()) {
-            meta.add("📅 " + escape(item.getDate()));
+            String fullDate = escape(item.getDate());
+            String dateWithoutTime = fullDate.split("T")[0];
+            meta.add("📅 " + dateWithoutTime);
         }
         if (item.getId() != null) {
             meta.add("🆔 <code>" + item.getId() + "</code>");
@@ -335,16 +339,16 @@ public class TelegramBot extends TelegramLongPollingBot {
         return sb.toString();
     }
 
-    private static String itemCount(int count) {
+    static String itemCount(int count) {
         return count + (count == 1 ? " item" : " items");
     }
 
-    private static String formatAmount(Double amount) {
+    static String formatAmount(Double amount) {
         return amount == null ? "?" : String.format(Locale.ROOT, "%.2f", amount);
     }
 
     /** Escapes the three characters that are significant to Telegram's HTML parse mode. */
-    private static String escape(String text) {
+    static String escape(String text) {
         if (text == null) {
             return "";
         }
@@ -357,7 +361,7 @@ public class TelegramBot extends TelegramLongPollingBot {
      * Splits text into Telegram-sized chunks, preferring blank-line boundaries so
      * individual expense blocks (and their HTML tags) are never cut in half.
      */
-    private static List<String> splitForTelegram(String text) {
+    static List<String> splitForTelegram(String text) {
         List<String> parts = new ArrayList<>();
         String remaining = text;
 
@@ -422,7 +426,7 @@ public class TelegramBot extends TelegramLongPollingBot {
         }
     }
 
-    private Result parseExpense(String text, int lineOffset) {
+    static Result parseExpense(String text, int lineOffset) {
         if (text == null || text.trim().isEmpty()) {
             return Result.error("Message cannot be empty.");
         }

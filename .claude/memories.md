@@ -60,3 +60,20 @@ strings and `e.getMessage()` included. Literal angle brackets in usage hints are
 `sendText` splits at blank lines via `splitForTelegram` because Telegram caps a message at
 4096 chars; `/list` exceeds that at roughly 45 expenses. Blank-line cuts keep each two-line
 expense block — and its `<b>`/`<code>` tags — intact, so chunks stay parseable.
+
+## Tests: JUnit 5, helpers are package-private on purpose
+`mvn test` runs 86 JUnit 5 tests (`junit-jupiter` 5.12.2, surefire 3.5.2) over the pure
+helpers in `TelegramBot`. Those helpers (`escape`, `formatAmount`, `itemCount`,
+`formatExpenseItem`, `formatExpenseResponse`, `splitForTelegram`, `parseExpense`) and
+`MAX_MESSAGE_LENGTH` are **static and package-private deliberately** — do not re-privatise
+them. They touch no instance state, so tests need no bot instance and no Telegram
+connection; the alternative was reflection.
+
+Two `parseExpense` quirks are pinned by tests as current behaviour, not bugs to "fix"
+silently: `"100 euro cents"` yields currency `EURO CENTS` (line 1 splits at the first
+whitespace run, the rest is the currency), and a blank **date** line fails the line-count
+check rather than the empty-field check, because `text.trim()` removes the trailing blank
+line before the fields are counted.
+
+Suite was mutation-checked: reordering `escape`'s replacements (`<` before `&`) and
+dropping `splitForTelegram`'s blank-line preference both fail the suite.

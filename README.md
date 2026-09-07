@@ -172,6 +172,23 @@ Lists are rendered as one two-line block per expense:
 The id is monospaced so it can be tapped to copy for `/delete` and `/update`. Refunds are
 marked with ↩️, and metadata fields that the API returns empty are omitted.
 
+## Tests
+
+```
+mvn test
+```
+
+JUnit 5 unit tests cover the pure helpers in `TelegramBot` — HTML escaping, amount
+formatting, the two-line expense block, the full list reply, message splitting and the
+five-line payload validation. These helpers are `static` and package-private for that
+reason, so the tests need neither a bot instance nor a Telegram connection.
+
+| Test | Covers |
+| --- | --- |
+| `ExpenseFormattingTest` | `escape`, `formatAmount`, `itemCount`, `formatExpenseItem`, `formatExpenseResponse` |
+| `MessageSplittingTest` | `splitForTelegram` — chunk size, block boundaries, no content loss |
+| `ExpenseParsingTest` | `parseExpense` — the five-line payload, for both a new expense and `/update` |
+
 ## Backend API
 
 `ExpenseWebClient` expects a REST service under `<API_BASE_URL>/api/v1`:
