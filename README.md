@@ -149,8 +149,28 @@ CFR
 2026-09-05
 ```
 
-Replies are sent with Markdown parse mode; if Telegram rejects the markup, the bot
-retries the same message as plain text.
+Replies are sent with HTML parse mode, and every value that comes from a chat message
+or from the API is HTML-escaped before it is inserted. If Telegram still rejects the
+markup, the bot retries the same message as plain text. Replies longer than Telegram's
+4096-character limit are split at blank-line boundaries so no expense block (and no HTML
+tag) is cut in half.
+
+Lists are rendered as one two-line block per expense:
+
+```
+📋 All expenses
+
+📊 161.50 EUR · 4 items · ↩️ 12.00 refunded
+
+100.00 EUR — Groceries
+🏷 Food · 👤 Lidl · 📅 2026-09-01 · 🆔 106
+
+42.50 EUR — Coffee beans
+🏷 Food · 👤 Roastery · 📅 2026-09-02 · 🆔 107
+```
+
+The id is monospaced so it can be tapped to copy for `/delete` and `/update`. Refunds are
+marked with ↩️, and metadata fields that the API returns empty are omitted.
 
 ## Backend API
 

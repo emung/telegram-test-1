@@ -44,3 +44,19 @@ Update is **`PATCH /api/v1/expenses/{id}`**, not PUT — the NestJS controller d
 `@Patch(':id')` and there is no PUT route, so a PUT returns 404 `Cannot PUT /api/v1/expenses/{id}`.
 `ExpenseWebClient.updateExpenseById` uses `.method("PATCH", ...)` because `HttpRequest.Builder`
 has no `.PATCH()` shortcut. Everything else is POST/GET/DELETE as listed in README.md.
+
+## Telegram parse mode is HTML, not Markdown
+Replies use `parseMode("HTML")` throughout `TelegramBot.java`. Legacy `"Markdown"` was
+dropped because it silently ate output: `[ID: 106]` parsed as link syntax so the brackets
+never rendered, and `**bold**` is not legacy Markdown (single `*` is), so `**Totals:**`
+came out as plain text. Any user-typed `_ * [` in a description could also break the parse
+entirely, and the `catch` in `sendText` then resends with `parseMode(null)`, so formatting
+just vanished with no visible error.
+
+Consequence: **every interpolated value must go through `escape()`** (`& < >`) — API error
+strings and `e.getMessage()` included. Literal angle brackets in usage hints are written as
+`&lt;id&gt;`.
+
+`sendText` splits at blank lines via `splitForTelegram` because Telegram caps a message at
+4096 chars; `/list` exceeds that at roughly 45 expenses. Blank-line cuts keep each two-line
+expense block — and its `<b>`/`<code>` tags — intact, so chunks stay parseable.

@@ -15,11 +15,15 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public class TelegramBot extends TelegramLongPollingBot {
 
     private static final String DELETE_CONFIRM_PREFIX = "CONFIRM_DELETE_";
     private static final String DELETE_CANCEL_PREFIX = "CANCEL_DELETE_";
+
+    /** Telegram rejects any sendMessage/editMessageText whose text exceeds this. */
+    private static final int MAX_MESSAGE_LENGTH = 4096;
 
     private final Config config;
     private final ExpenseWebClient webClient;
@@ -106,14 +110,12 @@ public class TelegramBot extends TelegramLongPollingBot {
                 Expense expense = result.getExpense();
                 try {
                     ExpenseItem savedExpense = webClient.createExpense(expense);
-                    sendText(userId, "✅ Saved successfully (ID: " + savedExpense.getId() + ")!\n" +
-                            "Spent " + savedExpense.getAmount() + " " + savedExpense.getCurrency() +
-                            " for " + savedExpense.getDescription());
+                    sendText(userId, "✅ <b>Saved</b>\n\n" + formatExpenseItem(savedExpense));
                 } catch (Exception e) {
-                    sendText(userId, "Error sending expense to API: " + e.getMessage());
+                    sendText(userId, "❌ Error sending expense to API: " + escape(e.getMessage()));
                 }
             } else {
-                sendText(userId, "Error: " + result.getMessage());
+                sendText(userId, "❌ " + escape(result.getMessage()));
             }
         }
     }
@@ -125,8 +127,7 @@ public class TelegramBot extends TelegramLongPollingBot {
             // Fetch expense first to show context in confirmation message
             ExpenseItem item = webClient.getExpenseById(id);
 
-            String promptText = String.format("⚠️ **Are you sure you want to delete expense ID %d?**\n\n• **Amount:** %s %s\n• **Description:** %s\n• **Category:** %s",
-                    item.getId(), item.getAmount(), item.getCurrency(), item.getDescription(), item.getCategory());
+            String promptText = "⚠️ <b>Delete expense " + item.getId() + "?</b>\n\n" + formatExpenseItem(item);
 
             // Build Inline Keyboard
             InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
@@ -148,15 +149,15 @@ public class TelegramBot extends TelegramLongPollingBot {
             SendMessage sm = SendMessage.builder()
                     .chatId(userId.toString())
                     .text(promptText)
-                    .parseMode("Markdown")
+                    .parseMode("HTML")
                     .replyMarkup(markup)
                     .build();
 
             execute(sm);
         } catch (NumberFormatException e) {
-            sendText(userId, "Invalid ID format. Usage: `/delete <id>` (e.g. `/delete 12`)");
+            sendText(userId, "❌ Invalid ID format.\nUsage: <code>/delete &lt;id&gt;</code> (e.g. <code>/delete 12</code>)");
         } catch (Exception e) {
-            sendText(userId, "Error fetching expense ID " + idStr + ": " + e.getMessage());
+            sendText(userId, "❌ Error fetching expense ID " + escape(idStr) + ": " + escape(e.getMessage()));
         }
     }
 
@@ -169,9 +170,9 @@ public class TelegramBot extends TelegramLongPollingBot {
             Long id = Long.parseLong(data.substring(DELETE_CONFIRM_PREFIX.length()));
             try {
                 webClient.deleteExpenseById(id);
-                editMessageText(chatId, messageId, "🗑️ **Expense ID " + id + " has been deleted successfully.**");
+                editMessageText(chatId, messageId, "🗑️ <b>Expense " + id + " deleted.</b>");
             } catch (Exception e) {
-                editMessageText(chatId, messageId, "❌ Error deleting expense ID " + id + ": " + e.getMessage());
+                editMessageText(chatId, messageId, "❌ Error deleting expense ID " + id + ": " + escape(e.getMessage()));
             }
         } else if (data.startsWith(DELETE_CANCEL_PREFIX)) {
             Long id = Long.parseLong(data.substring(DELETE_CANCEL_PREFIX.length()));
@@ -188,33 +189,33 @@ public class TelegramBot extends TelegramLongPollingBot {
         try {
             id = Long.parseLong(idStr);
         } catch (NumberFormatException e) {
-            sendText(userId, "Invalid ID in `/update` command. Usage:\n`/update <id>`\n<100 RON>\n<Description>\n<Category>\n<Recipient>\n<Date>");
+            sendText(userId, "❌ Invalid ID in <code>/update</code> command.\n\nUsage:\n"
+                    + "<pre>/update &lt;id&gt;\n100 RON\nDescription\nCategory\nRecipient\n2026-09-07</pre>");
             return;
         }
 
         Result result = parseExpense(rawText, 1);
 
         if (!result.isSuccess()) {
-            sendText(userId, "Error parsing update format:\n" + result.getMessage());
+            sendText(userId, "❌ Error parsing update format:\n" + escape(result.getMessage()));
             return;
         }
 
         try {
             ExpenseItem updatedExpense = webClient.updateExpenseById(id, result.getExpense());
-            sendText(userId, "✏️ Expense ID " + updatedExpense.getId() + " updated successfully!\n" +
-                    "New values: " + updatedExpense.getAmount() + " " + updatedExpense.getCurrency() +
-                    " - " + updatedExpense.getDescription());
+            sendText(userId, "✏️ <b>Expense " + updatedExpense.getId() + " updated</b>\n\n"
+                    + formatExpenseItem(updatedExpense));
         } catch (Exception e) {
-            sendText(userId, "Error updating expense: " + e.getMessage());
+            sendText(userId, "❌ Error updating expense: " + escape(e.getMessage()));
         }
     }
 
     private void handleListExpenses(Long userId) {
         try {
             ExpenseResponse response = webClient.getAllExpenses();
-            sendText(userId, formatExpenseResponse("All Expenses", response));
+            sendText(userId, formatExpenseResponse("All expenses", response));
         } catch (Exception e) {
-            sendText(userId, "Error fetching expenses: " + e.getMessage());
+            sendText(userId, "❌ Error fetching expenses: " + escape(e.getMessage()));
         }
     }
 
@@ -226,39 +227,39 @@ public class TelegramBot extends TelegramLongPollingBot {
                 return;
             }
 
-            StringBuilder sb = new StringBuilder("📁 **Categories:**\n\n");
+            StringBuilder sb = new StringBuilder("📁 <b>Categories</b>\n\n");
             for (String cat : categories) {
-                sb.append("• ").append(cat).append("\n");
+                sb.append("• ").append(escape(cat)).append("\n");
             }
             sendText(userId, sb.toString());
         } catch (Exception e) {
-            sendText(userId, "Error fetching categories: " + e.getMessage());
+            sendText(userId, "❌ Error fetching categories: " + escape(e.getMessage()));
         }
     }
 
     private void handleSearchExpenses(Long userId, String query) {
         if (query.isEmpty()) {
-            sendText(userId, "Please provide a search term. Example: `/search grocery`");
+            sendText(userId, "Please provide a search term. Example: <code>/search grocery</code>");
             return;
         }
         try {
             ExpenseResponse response = webClient.searchExpenses(query);
-            sendText(userId, formatExpenseResponse("Search Results for '" + query + "'", response));
+            sendText(userId, formatExpenseResponse("Search results for “" + query + "”", response));
         } catch (Exception e) {
-            sendText(userId, "Error searching expenses: " + e.getMessage());
+            sendText(userId, "❌ Error searching expenses: " + escape(e.getMessage()));
         }
     }
 
     private void handleExpensesByCategory(Long userId, String category) {
         if (category.isEmpty()) {
-            sendText(userId, "Please provide a category. Example: `/category Food`");
+            sendText(userId, "Please provide a category. Example: <code>/category Food</code>");
             return;
         }
         try {
             ExpenseResponse response = webClient.getExpensesByCategory(category);
-            sendText(userId, formatExpenseResponse("Expenses for Category '" + category + "'", response));
+            sendText(userId, formatExpenseResponse("Category “" + category + "”", response));
         } catch (Exception e) {
-            sendText(userId, "Error fetching category expenses: " + e.getMessage());
+            sendText(userId, "❌ Error fetching category expenses: " + escape(e.getMessage()));
         }
     }
 
@@ -266,37 +267,116 @@ public class TelegramBot extends TelegramLongPollingBot {
         List<ExpenseItem> expenses = response.getExpenses();
 
         if (expenses == null || expenses.isEmpty()) {
-            return "No expenses found for: " + title;
+            return "🔍 No expenses found — " + escape(title);
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append("📋 **").append(title).append("**\n\n");
+        sb.append("📋 <b>").append(escape(title)).append("</b>\n\n");
 
         if (response.getSums() != null && !response.getSums().isEmpty()) {
-            sb.append("📊 **Totals:**\n");
             for (ExpenseSummary sum : response.getSums()) {
-                sb.append("• ").append(sum.getSum()).append(" ").append(sum.getCurrency());
+                sb.append("📊 <b>").append(formatAmount(sum.getSum())).append(" ")
+                        .append(escape(sum.getCurrency())).append("</b>");
+                if (sum.getCount() != null) {
+                    sb.append(" · ").append(itemCount(sum.getCount()));
+                }
                 if (sum.getRefundSum() != null && sum.getRefundSum() > 0) {
-                    sb.append(" (Refunds: ").append(sum.getRefundSum()).append(")");
+                    sb.append(" · ↩️ ").append(formatAmount(sum.getRefundSum())).append(" refunded");
                 }
                 sb.append("\n");
             }
-            sb.append("\n");
+        } else {
+            sb.append("📊 ").append(itemCount(expenses.size())).append("\n");
         }
 
-        sb.append("📝 **Items:**\n");
         for (ExpenseItem item : expenses) {
-            sb.append("• [ID: ").append(item.getId()).append("] ")
-                    .append(item.getAmount()).append(" ").append(item.getCurrency())
-                    .append(" - ").append(item.getDescription())
-                    .append(" (").append(item.getCategory()).append(")");
-            if (item.getRecipient() != null && !item.getRecipient().isEmpty()) {
-                sb.append(" → ").append(item.getRecipient());
-            }
-            sb.append("\n");
+            sb.append("\n").append(formatExpenseItem(item)).append("\n");
+        }
+
+        return sb.toString().stripTrailing();
+    }
+
+    /**
+     * One expense as a two-line block: amount and description on the first line,
+     * the metadata (category, recipient, date, id) on the second.
+     */
+    private String formatExpenseItem(ExpenseItem item) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("<b>").append(formatAmount(item.getAmount()));
+        if (item.getCurrency() != null && !item.getCurrency().isBlank()) {
+            sb.append(" ").append(escape(item.getCurrency()));
+        }
+        sb.append("</b>");
+        if (item.getDescription() != null && !item.getDescription().isBlank()) {
+            sb.append(" — ").append(escape(item.getDescription()));
+        }
+        if (item.isRefund()) {
+            sb.append(" ↩️");
+        }
+
+        List<String> meta = new ArrayList<>();
+        if (item.getCategory() != null && !item.getCategory().isBlank()) {
+            meta.add("🏷 " + escape(item.getCategory()));
+        }
+        if (item.getRecipient() != null && !item.getRecipient().isBlank()) {
+            meta.add("👤 " + escape(item.getRecipient()));
+        }
+        if (item.getDate() != null && !item.getDate().isBlank()) {
+            meta.add("📅 " + escape(item.getDate()));
+        }
+        if (item.getId() != null) {
+            meta.add("🆔 <code>" + item.getId() + "</code>");
+        }
+        if (!meta.isEmpty()) {
+            sb.append("\n").append(String.join(" · ", meta));
         }
 
         return sb.toString();
+    }
+
+    private static String itemCount(int count) {
+        return count + (count == 1 ? " item" : " items");
+    }
+
+    private static String formatAmount(Double amount) {
+        return amount == null ? "?" : String.format(Locale.ROOT, "%.2f", amount);
+    }
+
+    /** Escapes the three characters that are significant to Telegram's HTML parse mode. */
+    private static String escape(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
+    }
+
+    /**
+     * Splits text into Telegram-sized chunks, preferring blank-line boundaries so
+     * individual expense blocks (and their HTML tags) are never cut in half.
+     */
+    private static List<String> splitForTelegram(String text) {
+        List<String> parts = new ArrayList<>();
+        String remaining = text;
+
+        while (remaining.length() > MAX_MESSAGE_LENGTH) {
+            int cut = remaining.lastIndexOf("\n\n", MAX_MESSAGE_LENGTH);
+            if (cut <= 0) {
+                cut = remaining.lastIndexOf('\n', MAX_MESSAGE_LENGTH);
+            }
+            if (cut <= 0) {
+                cut = MAX_MESSAGE_LENGTH;
+            }
+            parts.add(remaining.substring(0, cut).strip());
+            remaining = remaining.substring(cut).stripLeading();
+        }
+
+        if (!remaining.isBlank()) {
+            parts.add(remaining);
+        }
+        return parts;
     }
 
     public void editMessageText(Long chatId, Integer messageId, String newText) {
@@ -304,7 +384,7 @@ public class TelegramBot extends TelegramLongPollingBot {
                 .chatId(chatId.toString())
                 .messageId(messageId)
                 .text(newText)
-                .parseMode("Markdown")
+                .parseMode("HTML")
                 .build();
         try {
             execute(em);
@@ -319,10 +399,16 @@ public class TelegramBot extends TelegramLongPollingBot {
     }
 
     public void sendText(Long who, String what) {
+        for (String chunk : splitForTelegram(what)) {
+            sendChunk(who, chunk);
+        }
+    }
+
+    private void sendChunk(Long who, String what) {
         SendMessage sm = SendMessage.builder()
                 .chatId(who.toString())
                 .text(what)
-                .parseMode("Markdown")
+                .parseMode("HTML")
                 .build();
         try {
             execute(sm);
